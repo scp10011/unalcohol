@@ -254,7 +254,7 @@ func (r *JSONResponse[T]) Doc(operation *openapi3.Operation) error {
 	if err != nil {
 		return err
 	}
-	response.Content = openapi3.NewContentWithJSONSchemaRef(schemaRef)
+	response.WithContent(openapi3.NewContentWithJSONSchemaRef(schemaRef)).WithDescription("Response")
 	operation.Responses.Set("200", &openapi3.ResponseRef{Value: response})
 	return nil
 }

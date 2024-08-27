@@ -57,19 +57,21 @@ func RegisterDoc{{$key}}(paths *openapi3.Paths, __api *{{ $value.Package }}.{{$k
     paths.Set(unalcohol.JoinPath(__api, "{{ $path }}"), (func() *openapi3.PathItem {
 		item := &openapi3.PathItem{}
 		{{- range $h := $handler}}
-		opt{{ $h.Name }} := openapi3.NewOperation()
-		{{- range $in := $h.In}}
-        v{{ $in.Key }} := {{ $in.Type }}
-        if err := v{{ $in.Key }}.Doc("{{ $in.Key }}", opt{{ $h.Name }}); err != nil {
-            return nil
-        }
-        {{- end}}
-        result := {{ $h.Result }}{}
-        if err := result.Doc(opt{{ $h.Name }}); err != nil {
-            return nil
-        }
 		{{- range $h.Description.Method }}
-            item.SetOperation("{{.}}", opt{{$h.Name}})
+            item.SetOperation("{{.}}",  (func() *openapi3.Operation {
+                opt := openapi3.NewOperation()
+                {{- range $in := $h.In}}
+                v{{ $in.Key }} := {{ $in.Type }}
+                if err := v{{ $in.Key }}.Doc("{{ $in.Key }}", opt); err != nil {
+                    return nil
+                }
+                {{- end}}
+                result := {{ $h.Result }}{}
+                if err := result.Doc(opt); err != nil {
+                    return nil
+                }
+                return opt
+            })())
 		{{- end}}
 		{{- end}}
 		return item
