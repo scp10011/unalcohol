@@ -244,6 +244,7 @@ type ResponseInf interface {
 
 func (r *JSONResponse[T]) WriteResponse(w http.ResponseWriter) error {
 	w.WriteHeader(r.Code)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	return json.NewEncoder(w).Encode(r.Data)
 }
 
@@ -264,7 +265,17 @@ type IOResponse struct {
 	Data io.ReadCloser
 }
 
-func (r IOResponse) WriteResponse(w http.ResponseWriter) error {
+func (r *IOResponse) WriteResponse(w http.ResponseWriter) error {
+	w.Header().Set("content-type", "application/octet-stream")
 	_, err := io.Copy(w, r.Data)
 	return err
+}
+
+func (r *IOResponse) Doc(operation *openapi3.Operation) error {
+	operation.Responses = openapi3.NewResponses()
+	response := openapi3.NewResponse()
+	schemaRef := &openapi3.SchemaRef{Value: openapi3.NewBytesSchema()}
+	response.WithContent(openapi3.NewContentWithJSONSchemaRef(schemaRef)).WithDescription("Response")
+	operation.Responses.Set("200", &openapi3.ResponseRef{Value: response})
+	return nil
 }

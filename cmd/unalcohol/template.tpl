@@ -60,6 +60,16 @@ func RegisterDoc{{$key}}(paths *openapi3.Paths, __api *{{ $value.Package }}.{{$k
 		{{- range $h.Description.Method }}
             item.SetOperation("{{.}}",  (func() *openapi3.Operation {
                 opt := openapi3.NewOperation()
+                opt.Description = "{{ $h.Description.Description }}"
+                opt.Summary = "{{ $h.Description.Summary }}"
+                opt.Tags = []string{
+                    {{- range $h.Description.Tags }}
+                    "{{ . }}",
+                    {{end }}
+                }
+                if len(opt.Tags) == 0 {
+                    opt.Tags = __api.Tags
+                }
                 {{- range $in := $h.In}}
                 v{{ $in.Key }} := {{ $in.Type }}
                 if err := v{{ $in.Key }}.Doc("{{ $in.Key }}", opt); err != nil {

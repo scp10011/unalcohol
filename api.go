@@ -20,6 +20,7 @@ type API interface {
 
 type BaseAPI struct {
 	Path string
+	Tags []string
 }
 
 func (a *BaseAPI) Middleware(r *http.Request, resp http.ResponseWriter) error {

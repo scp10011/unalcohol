@@ -6,10 +6,10 @@ import (
 )
 
 const (
-	Description = "@Description"
-	Tags        = "@Tags"
+	Description = "@DESCRIPTION"
+	Tags        = "@TAGS"
 	Url         = "@URL"
-	Method      = "@Method"
+	Method      = "@METHOD"
 )
 
 type Doc struct {
@@ -26,7 +26,7 @@ func ParseDoc(group *ast.CommentGroup) *Doc {
 	for _, comment := range group.List {
 		words := strings.Fields(comment.Text)
 		if len(words) > 2 {
-			switch words[1] {
+			switch strings.ToUpper(words[1]) {
 			case Tags:
 				doc.Tags = strings.Split(words[2], ",")
 				break
@@ -37,6 +37,22 @@ func ParseDoc(group *ast.CommentGroup) *Doc {
 				doc.Method = strings.Split(strings.ToUpper(words[2]), ",")
 				break
 			case Url:
+				doc.URL = words[2]
+				break
+			case "@GET":
+				doc.Method = []string{"GET"}
+				doc.URL = words[2]
+				break
+			case "@POST":
+				doc.Method = []string{"POST"}
+				doc.URL = words[2]
+				break
+			case "@PUT":
+				doc.Method = []string{"PUT"}
+				doc.URL = words[2]
+				break
+			case "@DELETE":
+				doc.Method = []string{"DELETE"}
 				doc.URL = words[2]
 				break
 			default:

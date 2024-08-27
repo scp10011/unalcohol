@@ -86,6 +86,24 @@ func getTypeExpr(expr ast.Expr, packageName string) string {
 	}
 }
 
+func ParseSel(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.SelectorExpr:
+		return ParseSel(t.X)
+	case *ast.StarExpr:
+		return ParseSel(t.X)
+	case *ast.ArrayType:
+		return ParseSel(t.Elt)
+	case *ast.IndexExpr:
+		return ParseSel(t.X)
+	default:
+		log.Printf("%T", expr)
+		return "unknown"
+	}
+}
+
 type PreGen struct {
 	Package string
 	Handler map[string]PrePath
@@ -126,9 +144,29 @@ func ParsePath(path string) string {
 	return path
 }
 
+func ParseImportPackageName(packageName, rootPath, path string) string {
+	if !strings.Contains(path, packageName) {
+		return ""
+	}
+	path = strings.ReplaceAll(path, "\"", "")
+	path = strings.Replace(path, packageName, rootPath, 1) + "/."
+	pkgs, err := parser.ParseDir(token.NewFileSet(), path, nil, parser.ParseComments)
+	if err != nil {
+		return ""
+	}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Files {
+			return file.Name.String()
+		}
+	}
+	return ""
+}
+
 func main() {
 	flag.Parse()
 	rootPath := ParsePath(*root)
+	os.Chdir(rootPath)
+
 	handlerPath := ParsePath(*handler)
 	mainFile := ParsePath(*endpoint)
 	output, _ := filepath.Split(mainFile)
@@ -146,6 +184,7 @@ func main() {
 	imports := make([]string, 0)
 	data := make(map[string]PrePath)
 	total := 0
+	ImportPadding := make(map[string]string)
 	err = filepath.Walk(handlerPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Fatalf("walk: %+v", err)
@@ -161,8 +200,19 @@ func main() {
 		}
 		// 生成并输出代码
 		for name, pkg := range pkgs {
-			importPath := strings.Replace(path, handlerPath, packageName, 1)
+			importPath := strings.Replace(path, rootPath, packageName, 1)
+			importPath = filepath.ToSlash(importPath)
 			for _, file := range pkg.Files {
+				for _, imp := range file.Imports {
+					if imp.Name != nil {
+						ImportPadding[imp.Name.String()] = imp.Path.Value
+					} else {
+						n := ParseImportPackageName(packageName, rootPath, imp.Path.Value)
+						if n != "" {
+							ImportPadding[n] = strings.Trim(imp.Path.Value, "\"")
+						}
+					}
+				}
 				handler := make(map[string]*doc.Doc)
 				for _, group := range file.Comments {
 					if description := doc.ParseDoc(group); description != nil {
@@ -196,6 +246,10 @@ func main() {
 					}
 					request := PreHandler{Description: description, Path: description.URL, Name: functionName}
 					for _, param := range funcDecl.Type.Params.List {
+						importParse := ParseSel(param.Type)
+						if p, ok := ImportPadding[importParse]; ok {
+							imports = append(imports, p)
+						}
 						for _, ident := range param.Names {
 							t := getTypeExpr(param.Type, name)
 							request.In = append(request.In, PreParam{
