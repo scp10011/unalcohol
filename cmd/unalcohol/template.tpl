@@ -54,7 +54,7 @@ func RegisterHandler{{$key}}(srv *unalcohol.Server,__api *{{ $value.Package }}.{
 {{- range $key, $value := .Handler }}
 func RegisterDoc{{$key}}(paths *openapi3.Paths, __api *{{ $value.Package }}.{{$key}}) {
 	{{- range $path, $handler := $value.Path }}
-    paths.Set(unalcohol.JoinPath(__api, "/users"), (func() *openapi3.PathItem {
+    paths.Set(unalcohol.JoinPath(__api, "{{ $path }}"), (func() *openapi3.PathItem {
 		item := &openapi3.PathItem{}
 		{{- range $h := $handler}}
 		opt{{ $h.Name }} := openapi3.NewOperation()

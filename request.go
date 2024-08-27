@@ -101,7 +101,6 @@ func (b *Body[T]) ParseRequest(key string, r *http.Request, resp http.ResponseWr
 }
 
 func (b *Body[T]) Doc(key string, operation *openapi3.Operation) error {
-
 	var body *openapi3.RequestBody
 	var data *openapi3.MediaType
 	if operation.RequestBody != nil {

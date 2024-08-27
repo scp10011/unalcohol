@@ -22,6 +22,10 @@ type BaseAPI struct {
 	Path string
 }
 
+func (a *BaseAPI) Middleware(r *http.Request, resp http.ResponseWriter) error {
+	return nil
+}
+
 func (a *BaseAPI) GetPath() string {
 	return a.Path
 }
@@ -30,8 +34,9 @@ func (a *BaseAPI) GetPtr() API {
 	return nil
 }
 
-func New() *Server {
+func New(address string) *Server {
 	return &Server{
+		Addr:                      address,
 		Mux:                       http.NewServeMux(),
 		middleware:                make([]Middleware, 0),
 		StatusBadRequest:          DefaultStatusBadRequest,
