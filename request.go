@@ -2,12 +2,14 @@ package unalcohol
 
 import (
 	"encoding/json"
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3gen"
 	"io"
 	"net/http"
 	"strconv"
 )
 
-type Path[T int | string | float32 | float64] struct {
+type Path[T int | string | float32 | float64 | int64] struct {
 	Value T
 }
 
@@ -36,6 +38,17 @@ func (p *Path[T]) ParseRequest(key string, r *http.Request, resp http.ResponseWr
 	return nil
 }
 
+func (p *Path[T]) Doc(key string, operation *openapi3.Operation) error {
+	parameter := openapi3.NewPathParameter(key)
+	schemaRef, err := openapi3gen.NewSchemaRefForValue(new(T), nil)
+	if err != nil {
+		return err
+	}
+	parameter.Schema = schemaRef
+	operation.Parameters = append(operation.Parameters, &openapi3.ParameterRef{Value: parameter})
+	return nil
+}
+
 type JSON[T any] struct {
 	Value T
 }
@@ -43,6 +56,18 @@ type JSON[T any] struct {
 func (j *JSON[T]) ParseRequest(key string, r *http.Request, resp http.ResponseWriter) (err error) {
 	decoder := json.NewDecoder(r.Body)
 	return decoder.Decode(&j.Value)
+}
+
+func (j *JSON[T]) Doc(key string, operation *openapi3.Operation) error {
+	schemaRef, err := openapi3gen.NewSchemaRefForValue(new(T), nil)
+	if err != nil {
+		return err
+	}
+	operation.RequestBody = &openapi3.RequestBodyRef{}
+	body := openapi3.NewRequestBody()
+	body.Content = openapi3.NewContentWithJSONSchemaRef(schemaRef)
+	operation.RequestBody = &openapi3.RequestBodyRef{Value: body}
+	return nil
 }
 
 type Body[T any] struct {
@@ -72,6 +97,33 @@ func (b *Body[T]) ParseRequest(key string, r *http.Request, resp http.ResponseWr
 	case *[]byte:
 		*v = []byte(value)
 	}
+	return nil
+}
+
+func (b *Body[T]) Doc(key string, operation *openapi3.Operation) error {
+
+	var body *openapi3.RequestBody
+	var data *openapi3.MediaType
+	if operation.RequestBody != nil {
+		body = operation.RequestBody.Value
+	} else {
+		body = openapi3.NewRequestBody().WithContent(openapi3.Content{
+			"application/x-www-form-urlencoded": openapi3.NewMediaType(),
+		})
+		operation.RequestBody = &openapi3.RequestBodyRef{Value: body}
+	}
+	data = body.GetMediaType("application/x-www-form-urlencoded")
+	schema := openapi3.NewObjectSchema()
+	if data.Schema != nil && data.Schema.Value != nil {
+		schema = data.Schema.Value
+	} else {
+		data.Schema = &openapi3.SchemaRef{Value: schema}
+	}
+	schemaRef, err := openapi3gen.NewSchemaRefForValue(new(T), nil)
+	if err != nil {
+		return err
+	}
+	schema.Properties[key] = schemaRef
 	return nil
 }
 
@@ -105,6 +157,17 @@ func (p *Param[T]) ParseRequest(key string, r *http.Request, resp http.ResponseW
 	return nil
 }
 
+func (p *Param[T]) Doc(key string, operation *openapi3.Operation) error {
+	parameter := openapi3.NewQueryParameter(key)
+	schemaRef, err := openapi3gen.NewSchemaRefForValue(new(T), nil)
+	if err != nil {
+		return err
+	}
+	parameter.Schema = schemaRef
+	operation.Parameters = append(operation.Parameters, &openapi3.ParameterRef{Value: parameter})
+	return nil
+}
+
 type Header[T any] struct {
 	Value T
 }
@@ -134,12 +197,27 @@ func (h *Header[T]) ParseRequest(key string, r *http.Request, resp http.Response
 	return nil
 }
 
+func (p *Header[T]) Doc(key string, operation *openapi3.Operation) error {
+	parameter := openapi3.NewHeaderParameter(key)
+	schemaRef, err := openapi3gen.NewSchemaRefForValue(new(T), nil)
+	if err != nil {
+		return err
+	}
+	parameter.Schema = schemaRef
+	operation.Parameters = append(operation.Parameters, &openapi3.ParameterRef{Value: parameter})
+	return nil
+}
+
 type Request struct {
 	Value *http.Request
 }
 
 func (r *Request) ParseRequest(key string, req *http.Request, resp http.ResponseWriter) (err error) {
 	r.Value = req
+	return nil
+}
+
+func (r *Request) Doc(key string, operation *openapi3.Operation) error {
 	return nil
 }
 
@@ -152,6 +230,10 @@ func (r *Response) ParseRequest(key string, req *http.Request, resp http.Respons
 	return nil
 }
 
+func (r *Response) Doc(key string, operation *openapi3.Operation) error {
+	return nil
+}
+
 type JSONResponse[T any] struct {
 	Code int
 	Data T
@@ -161,9 +243,21 @@ type ResponseInf interface {
 	WriteResponse(http.ResponseWriter) error
 }
 
-func (r JSONResponse[T]) WriteResponse(w http.ResponseWriter) error {
+func (r *JSONResponse[T]) WriteResponse(w http.ResponseWriter) error {
 	w.WriteHeader(r.Code)
 	return json.NewEncoder(w).Encode(r.Data)
+}
+
+func (r *JSONResponse[T]) Doc(operation *openapi3.Operation) error {
+	operation.Responses = openapi3.NewResponses()
+	response := openapi3.NewResponse()
+	schemaRef, err := openapi3gen.NewSchemaRefForValue(new(T), nil)
+	if err != nil {
+		return err
+	}
+	response.Content = openapi3.NewContentWithJSONSchemaRef(schemaRef)
+	operation.Responses.Set("200", &openapi3.ResponseRef{Value: response})
+	return nil
 }
 
 type IOResponse struct {

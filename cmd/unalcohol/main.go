@@ -2,7 +2,9 @@ package main
 
 import (
 	_ "embed"
+	"flag"
 	"fmt"
+	"github.com/scp10011/unalcohol/internal/doc"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -85,6 +87,7 @@ func getTypeExpr(expr ast.Expr, packageName string) string {
 }
 
 type PreGen struct {
+	Package string
 	Handler map[string]PrePath
 	Imports []string
 }
@@ -101,35 +104,49 @@ type PreParam struct {
 }
 
 type PreHandler struct {
-	Path   string
-	Name   string
-	Method string
-	In     []PreParam
+	Description *doc.Doc
+	Path        string
+	Name        string
+	Method      string
+	Result      string
+	In          []PreParam
+}
+
+var (
+	root     = flag.String("root", ".", "package root path")
+	endpoint = flag.String("entry", "main.go", "entry point file")
+	handler  = flag.String("handler", ".", "handler dir")
+)
+
+func ParsePath(path string) string {
+	if path == "." {
+		path, _ = os.Getwd()
+	}
+	path, _ = filepath.Abs(path)
+	return path
 }
 
 func main() {
-	root := "./.."
-	log.Println(os.Args)
-	if len(os.Args) > 1 {
-		root = os.Args[1]
+	flag.Parse()
+	rootPath := ParsePath(*root)
+	handlerPath := ParsePath(*handler)
+	mainFile := ParsePath(*endpoint)
+	output, _ := filepath.Split(mainFile)
+	output = filepath.Join(output, "unalcohol_gen.go")
+	os.Chdir(rootPath)
+	file, err := parser.ParseFile(token.NewFileSet(), mainFile, nil, parser.ParseComments)
+	if err != nil {
+		log.Fatal(err)
 	}
-	e, err := os.Executable()
-	base, _ := filepath.Split(e)
-	base = strings.TrimSuffix(base, "/")
-	modBuffer, err := os.ReadFile(filepath.Join(base, "go.mod"))
+	modBuffer, err := os.ReadFile(filepath.Join(rootPath, "go.mod"))
 	if err != nil {
 		log.Fatalln("Did not find the go.mod file.")
 	}
 	packageName := modfile.ModulePath(modBuffer)
-	log.Println(root, packageName, base)
-	findPath := strings.Replace(root, packageName, base, 1)
-	if findPath == root {
-		log.Fatalln("Package name does not match the declaration.")
-	}
 	imports := make([]string, 0)
 	data := make(map[string]PrePath)
 	total := 0
-	err = filepath.Walk(findPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(handlerPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Fatalf("walk: %+v", err)
 		}
@@ -144,29 +161,15 @@ func main() {
 		}
 		// 生成并输出代码
 		for name, pkg := range pkgs {
-			importPath := strings.Replace(path, findPath, root, 1)
+			importPath := strings.Replace(path, handlerPath, packageName, 1)
 			for _, file := range pkg.Files {
-				handler := make(map[token.Pos]PreHandler)
+				handler := make(map[string]*doc.Doc)
 				for _, group := range file.Comments {
-					for _, comment := range group.List {
-						if strings.HasPrefix(comment.Text, "//go:api") {
-							split := strings.Split(comment.Text, " ")
-							if len(split) != 3 {
-								log.Fatalf("Compiler Error: %+v", comment.Text)
-							}
-							handler[comment.End()+1] = PreHandler{
-								Method: split[1],
-								Path:   split[2],
-								In:     make([]PreParam, 0),
-							}
-						}
+					if description := doc.ParseDoc(group); description != nil {
+						handler[description.Name] = description
 					}
 				}
 				for _, decl := range file.Decls {
-					request, ok := handler[decl.Pos()]
-					if !ok {
-						continue
-					}
 					funcDecl, ok := decl.(*ast.FuncDecl)
 					if !ok {
 						continue
@@ -186,7 +189,12 @@ func main() {
 						}
 						data[ptr] = block
 					}
-					request.Name = funcDecl.Name.String()
+					functionName := funcDecl.Name.String()
+					description, ok := handler[functionName]
+					if !ok {
+						continue
+					}
+					request := PreHandler{Description: description, Path: description.URL, Name: functionName}
 					for _, param := range funcDecl.Type.Params.List {
 						for _, ident := range param.Names {
 							t := getTypeExpr(param.Type, name)
@@ -196,6 +204,11 @@ func main() {
 							})
 						}
 					}
+					if len(funcDecl.Type.Results.List) != 1 {
+						continue
+					}
+					result := funcDecl.Type.Results.List[0]
+					request.Result = getTypeExpr(result.Type, name)
 					block.Path[request.Path] = append(block.Path[request.Path], request)
 				}
 			}
@@ -206,7 +219,7 @@ func main() {
 		}
 		return nil
 	})
-	params := PreGen{Handler: data, Imports: imports}
+	params := PreGen{Handler: data, Imports: imports, Package: file.Name.String()}
 
 	tmpl, err := template.New("stringMethod").Parse(stringMethodTemplate)
 	if err != nil {
@@ -223,5 +236,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error formatting source:", err)
 		os.Exit(1)
 	}
-	os.WriteFile("unalcohol_gen.go", src, 0644)
+
+	os.WriteFile(output, src, 0644)
 }
